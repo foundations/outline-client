@@ -16,14 +16,14 @@
 !include WinVer.nsh
 !include x64.nsh
 
-; !include env.nsh
+!include env.nsh
 
-; ; StrFunc weirdness; this fix suggested here:
-; ; https://github.com/electron-userland/electron-builder/issues/888
-; !ifndef BUILD_UNINSTALLER
-; ${StrNSISToIO}
-; ${StrRep}
-; !endif
+; StrFunc weirdness; this fix suggested here:
+; https://github.com/electron-userland/electron-builder/issues/888
+!ifndef BUILD_UNINSTALLER
+${StrNSISToIO}
+${StrRep}
+!endif
 
 !macro customInstall
   ; Normally, because we mark the installer binary as requiring administrator permissions, the
