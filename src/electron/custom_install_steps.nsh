@@ -59,10 +59,11 @@
   File "${PROJECT_DIR}\src\electron\install_windows_service.bat"
 
   ; ExecToStack captures both stdout and stderr from the script, in the order output.
+  ReadEnvStr $0 COMSPEC
   ${If} ${RunningX64}
-    nsExec::ExecToStack 'add_tap_device.bat amd64'
+    nsExec::ExecToStack '$0 /c add_tap_device.bat amd64'
   ${Else}
-    nsExec::ExecToStack 'add_tap_device.bat i386'
+    nsExec::ExecToStack '$0 /c add_tap_device.bat i386'
   ${EndIf}
 
   Pop $0
@@ -72,46 +73,46 @@
     running the installer again. If you still cannot install Outline, please get in \
     touch with us and let us know that the TAP device could not be installed."
 
-  ; ; Submit a Sentry error event.
-  ; ;
-  ; ; This will get bundled into an issue named "could not install TAP device" with the following
-  ; ; attributes:
-  ; ;  - a single breadcrumb containing the output of add_tap_device.bat
-  ; ;  - Windows version, as a tag named "os" with a value identical in most cases to what the
-  ; ;    JavaScript Sentry client produces, e.g. "Windows 10.0.17134"
-  ; ;  - client version
-  ; ;
-  ; ; Note:
-  ; ;  - Sentry won't accept a breadcrumbs without a timestamp; fortunately, it accepts obviously
-  ; ;    bogus values so we don't have to fetch the real time.
-  ; ;  - Because nsExec::ExecToStack yields "NSIS strings" strings suitable for inclusion in, for
-  ; ;    example, a MessageBox, e.g. "device not found$\ncommand failed", we must convert it to a
-  ; ;    string that Sentry will like *and* can fit on one line, e.g.
-  ; ;    "device not found\ncommand failed"; fortunately, StrFunc.nsh's StrNSISToIO does precisely
-  ; ;    this.
-  ; ;  - RELEASE and SENTRY_DSN are defined in env.nsh which is generated at build time by
-  ; ;    {package,release}_action.sh.
+  ; Submit a Sentry error event.
+  ;
+  ; This will get bundled into an issue named "could not install TAP device" with the following
+  ; attributes:
+  ;  - a single breadcrumb containing the output of add_tap_device.bat
+  ;  - Windows version, as a tag named "os" with a value identical in most cases to what the
+  ;    JavaScript Sentry client produces, e.g. "Windows 10.0.17134"
+  ;  - client version
+  ;
+  ; Note:
+  ;  - Sentry won't accept a breadcrumbs without a timestamp; fortunately, it accepts obviously
+  ;    bogus values so we don't have to fetch the real time.
+  ;  - Because nsExec::ExecToStack yields "NSIS strings" strings suitable for inclusion in, for
+  ;    example, a MessageBox, e.g. "device not found$\ncommand failed", we must convert it to a
+  ;    string that Sentry will like *and* can fit on one line, e.g.
+  ;    "device not found\ncommand failed"; fortunately, StrFunc.nsh's StrNSISToIO does precisely
+  ;    this.
+  ;  - RELEASE and SENTRY_DSN are defined in env.nsh which is generated at build time by
+  ;    {package,release}_action.sh.
 
-  ; ; http://nsis.sourceforge.net/Docs/StrFunc/StrFunc.txt
-  ; Var /GLOBAL FAILURE_MESSAGE
-  ; ${StrNSISToIO} $FAILURE_MESSAGE $1
-  ; ${StrRep} $FAILURE_MESSAGE $FAILURE_MESSAGE '"' '\"'
+  ; http://nsis.sourceforge.net/Docs/StrFunc/StrFunc.txt
+  Var /GLOBAL FAILURE_MESSAGE
+  ${StrNSISToIO} $FAILURE_MESSAGE $1
+  ${StrRep} $FAILURE_MESSAGE $FAILURE_MESSAGE '"' '\"'
 
-  ; ${WinVerGetMajor} $R0
-  ; ${WinVerGetMinor} $R1
-  ; ${WinVerGetBuild} $R2
+  ${WinVerGetMajor} $R0
+  ${WinVerGetMinor} $R1
+  ${WinVerGetBuild} $R2
 
-  ; ; http://nsis.sourceforge.net/Inetc_plug-in#post
-  ; inetc::post '{\
-  ;   "message":"could not install TAP device",\
-  ;   "release":"${RELEASE}",\
-  ;   "tags":[\
-  ;     ["os", "Windows $R0.$R1.$R2"]\
-  ;   ],\
-  ;   "breadcrumbs":[\
-  ;     {"timestamp":1, "message":"$FAILURE_MESSAGE"}\
-  ;   ]\
-  ; }' /TOSTACK ${SENTRY_DSN} /END
+  ; http://nsis.sourceforge.net/Inetc_plug-in#post
+  inetc::post '{\
+    "message":"could not install TAP device ($0)",\
+    "release":"${RELEASE}",\
+    "tags":[\
+      ["os", "Windows $R0.$R1.$R2"]\
+    ],\
+    "breadcrumbs":[\
+      {"timestamp":1, "message":"$FAILURE_MESSAGE"}\
+    ]\
+  }' /TOSTACK ${SENTRY_DSN} /END
 
   Quit
 
