@@ -16,9 +16,11 @@ import * as sentry from '@sentry/electron';
 import {app, BrowserWindow, ipcMain, Menu, MenuItemConstructorOptions, nativeImage, shell, Tray} from 'electron';
 import * as promiseIpc from 'electron-promise-ipc';
 import {autoUpdater} from 'electron-updater';
+import * as os from 'os';
 import * as path from 'path';
 import * as process from 'process';
 import * as url from 'url';
+import autoLaunch = require('auto-launch'); // tslint:disable-line
 
 import * as errors from '../www/model/errors';
 
@@ -29,6 +31,8 @@ import * as process_manager from './process_manager';
 // Used for the auto-connect feature. There will be a connection in store
 // if the user was connected at shutdown.
 const connectionStore = new ConnectionStore(app.getPath('userData'));
+
+const isLinux = os.platform() === 'linux';
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -99,9 +103,7 @@ function createWindow(connectionAtShutdown?: SerializableConnection) {
     if (connectionAtShutdown) {
       const serverId = connectionAtShutdown.id;
       console.info(`Automatically starting connection ${serverId}`);
-      if (mainWindow) {
-        mainWindow.webContents.send(`proxy-reconnecting-${serverId}`);
-      }
+      sendConnectionStatus(ConnectionStatus.RECONNECTING, serverId);
       // TODO: Handle errors, report.
       startVpn(connectionAtShutdown.config, serverId, true);
     }
@@ -218,8 +220,30 @@ app.on('ready', () => {
   }
 
   // Set the app to launch at startup to connect automatically in case of a showdown while proxying.
-  app.setLoginItemSettings({openAtLogin: true, args: [Options.AUTOSTART]});
+  if (isLinux) {
+    if (process.env.APPIMAGE) {
+      const outlineAutoLauncher = new autoLaunch({
+        name: 'OutlineClient',
+        path: process.env.APPIMAGE,
+      });
 
+      outlineAutoLauncher.isEnabled()
+          .then((isEnabled: boolean) => {
+            if (isEnabled) {
+              return;
+            }
+            outlineAutoLauncher.enable();
+          })
+          .catch((err: Error) => {
+            console.error(`failed to add autolaunch entry for Outline ${err.message}`);
+          });
+    }
+  } else {
+    app.setLoginItemSettings({openAtLogin: true, args: [Options.AUTOSTART]});
+  }
+
+  // because autostart doesn't work for linux then we just assume we
+  // are auto started on linux
   if (process.argv.includes(Options.AUTOSTART)) {
     connectionStore.load()
         .then((connection) => {
@@ -230,7 +254,7 @@ app.on('ready', () => {
         .catch((err) => {
           // The user was not connected at shutdown.
           // Quitting the app will reset the system proxy configuration before exiting.
-          quitApp();
+          console.log('The user was not connected at shutdown.');
         });
   } else {
     createWindow();
@@ -270,28 +294,48 @@ function startVpn(config: cordova.plugins.outline.ServerConfig, id: string, isAu
         return process_manager
             .startVpn(
                 config,
-                () => {
-                  if (mainWindow) {
-                    mainWindow.webContents.send(`proxy-disconnected-${id}`);
-                  } else {
-                    console.warn(`received proxy-disconnected event but no mainWindow to notify`);
+                (status: ConnectionStatus) => {
+                  createTrayIcon(status);
+                  sendConnectionStatus(status, id);
+                  if (status === ConnectionStatus.DISCONNECTED) {
+                    connectionStore.clear().catch((err) => {
+                      console.error('Failed to clear connection store.');
+                    });
                   }
-                  connectionStore.clear().catch((err) => {
-                    console.error('Failed to clear connection store.');
-                  });
-                  createTrayIcon(ConnectionStatus.DISCONNECTED);
                 },
                 isAutoConnect)
             .then((newConfig) => {
               connectionStore.save({config: newConfig, id}).catch((err) => {
                 console.error('Failed to store connection.');
               });
-              if (mainWindow) {
-                mainWindow.webContents.send(`proxy-connected-${id}`);
-              }
+              sendConnectionStatus(ConnectionStatus.CONNECTED, id);
               createTrayIcon(ConnectionStatus.CONNECTED);
             });
       });
+}
+
+function sendConnectionStatus(status: ConnectionStatus, connectionId: string) {
+  let statusString;
+  switch (status) {
+    case ConnectionStatus.CONNECTED:
+      statusString = 'connected';
+      break;
+    case ConnectionStatus.DISCONNECTED:
+      statusString = 'disconnected';
+      break;
+    case ConnectionStatus.RECONNECTING:
+      statusString = 'reconnecting';
+      break;
+    default:
+      console.error(`Cannot send unknown proxy status: ${status}`);
+      return;
+  }
+  const event = `proxy-${statusString}-${connectionId}`;
+  if (mainWindow) {
+    mainWindow.webContents.send(event);
+  } else {
+    console.warn(`received ${event} event but no mainWindow to notify`);
+  }
 }
 
 promiseIpc.on(

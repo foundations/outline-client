@@ -166,6 +166,8 @@ export class App {
     } else if (e instanceof errors.ServerAlreadyAdded) {
       messageKey = 'error-server-already-added';
       messageParams = ['serverName', e.server.name];
+    } else if (e instanceof errors.SystemConfigurationException) {
+      messageKey = 'outline-plugin-error-system-configuration';
     } else {
       messageKey = 'error-unexpected';
     }
@@ -194,7 +196,7 @@ export class App {
         });
   }
 
-  private showServerConnected(event: events.ServerDisconnected): void {
+  private showServerConnected(event: events.ServerConnected): void {
     console.debug(`server ${event.server.id} connected`);
     const card = this.serverListEl.getServerCard(event.server.id);
     card.state = 'CONNECTED';
@@ -209,7 +211,7 @@ export class App {
     }
   }
 
-  private showServerReconnecting(event: events.ServerDisconnected): void {
+  private showServerReconnecting(event: events.ServerReconnecting): void {
     console.debug(`server ${event.server.id} reconnecting`);
     const card = this.serverListEl.getServerCard(event.server.id);
     card.state = 'RECONNECTING';
@@ -225,7 +227,7 @@ export class App {
     try {
       return this.settings.get(SettingsKey.PRIVACY_ACK) === 'true';
     } catch (e) {
-      console.error(`could not read privacy acknowledgement setting, assuming not akcnowledged`);
+      console.error(`could not read privacy acknowledgement setting, assuming not acknowledged`);
     }
     return false;
   }
@@ -289,10 +291,12 @@ export class App {
   }
 
   private confirmAddServer(accessKey: string, fromClipboard = false) {
+    const addServerView = this.rootEl.$.addServerView;
     accessKey = unwrapInvite(accessKey);
     if (fromClipboard && accessKey in this.ignoredAccessKeys) {
-      console.debug('Ignoring access key');
-      return;
+      return console.debug('Ignoring access key');
+    } else if (fromClipboard && addServerView.isAddingServer()) {
+      return console.debug('Already adding a server');
     }
     // Expect SHADOWSOCKS_URI.parse to throw on invalid access key; propagate any exception.
     let shadowsocksConfig = null;
@@ -316,7 +320,6 @@ export class App {
       password: shadowsocksConfig.password.data,
       name,
     };
-    const addServerView = this.rootEl.$.addServerView;
     if (!this.serverRepo.containsServer(serverConfig)) {
       // Only prompt the user to add new servers.
       try {
@@ -516,8 +519,9 @@ export class App {
 
   private registerUrlInterceptionListener(urlInterceptor: UrlInterceptor) {
     urlInterceptor.registerListener((url) => {
-      if (!url) {
-        // This check is necessary to handle empty and malformed install-referrer URLs in Android.
+      if (!url || !unwrapInvite(url).startsWith('ss://')) {
+        // This check is necessary to ignore empty and malformed install-referrer URLs in Android
+        // while allowing ss:// and invite URLs.
         // TODO: Stop receiving install referrer intents so we can remove this.
         return console.debug(`Ignoring intercepted non-shadowsocks url`);
       }

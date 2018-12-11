@@ -138,7 +138,7 @@ function copyBabelPolyfill(config) {
   });
 }
 
-// Writes a JSON file accessible to environvment.ts containing environment variables.
+// Writes a JSON file accessible to environment.ts containing environment variables.
 function writeEnvJson(platform, config, isRelease) {
   const platformPath = `platforms/${platform}`;
   if (!fs.existsSync(platformPath)) {
@@ -148,7 +148,11 @@ function writeEnvJson(platform, config, isRelease) {
     throw new Error(`Failed to set up environment, no such path: ${config.targetDir}`);
   }
   const envFile = `${config.targetDir}/environment.json`;
-  runCommand(`scripts/environment_json.sh -p ${platform} ${isRelease ? '-r' : ''} > ${envFile}`, {}, function () {
+  let envScript  = 'scripts/environment_json.sh';
+  if (process.platform.includes('win')) {
+    envScript = `sh ${envScript}`;
+  }
+  runCommand(`${envScript} -p ${platform} ${isRelease ? '-r' : ''} > ${envFile}`, {}, function() {
     gutil.log(`Wrote ${envFile}`);
   });
 }
